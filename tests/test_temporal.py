@@ -1,6 +1,7 @@
 """Validate temporal checks against clean and intentionally leaky fixtures."""
 
 import pandas as pd
+
 from leak_detector.temporal import check_feature_timestamp_order, check_split_chronology
 
 LABEL_DATE = "label_date"
