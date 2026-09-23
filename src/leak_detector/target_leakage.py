@@ -1,13 +1,17 @@
+from pathlib import Path
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
 from scipy.stats import chi2_contingency
-from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+if TYPE_CHECKING:
+    from .types import CheckResult
 
 
 def is_id_like(feature_series: pd.Series, id_cardinality_threshold: float = 0.95) -> bool:
@@ -46,10 +50,11 @@ def check_single_feature_predictiveness(
     threshold: float = 0.9,
     cv: int = 5,
     id_cardinality_threshold: float = 0.95,
-) -> dict:
+) -> "CheckResult":
     """Evaluates each feature's standalone predictive power using CV AUC score
 
-    to detect potential target leakage.
+    to detect potential target leakage. Supports both binary targets (plain
+    ROC AUC) and multi-class targets (one-vs-rest ROC AUC, averaged).
     """
     if target_col not in df.columns:
         raise ValueError(f"Target column '{target_col}' not found in DataFrame.")
@@ -57,13 +62,31 @@ def check_single_feature_predictiveness(
     # Drop rows where target is missing
     clean_df = df.dropna(subset=[target_col]).copy()
     y = clean_df[target_col]
-    
-    # Verify target is binary
-    if y.nunique() != 2:
-        raise ValueError(f"Target '{target_col}' must be binary for AUC calculation.")
+
+    # Target must have at least 2 classes -- anything less can't be modeled.
+    n_classes = y.nunique()
+    if n_classes < 2:
+        raise ValueError(f"Target '{target_col}' must have at least 2 classes.")
+
+    # Multi-class ROC AUC needs enough examples per class to build `cv`
+    # stratified folds. Fail loudly and specifically here, rather than
+    # letting every single feature silently fail one by one below.
+    class_counts = y.value_counts()
+    if class_counts.min() < cv:
+        raise ValueError(
+            f"Target '{target_col}' has a class with only {class_counts.min()} "
+            f"example(s), which is fewer than cv={cv} folds. Reduce cv or "
+            "address the rare class before running this check."
+        )
+
+    # Binary keeps using plain "roc_auc". 3+ classes switches to one-vs-rest
+    # AUC, which LogisticRegression(solver="liblinear") supports natively
+    # since liblinear only ever does one-vs-rest for multi-class anyway.
+    scoring = "roc_auc" if n_classes == 2 else "roc_auc_ovr"
 
     detail = []
-    
+    errors = []
+
     for col in clean_df.columns:
         if col == target_col:
             continue
@@ -108,31 +131,32 @@ def check_single_feature_predictiveness(
                 X,
                 y,
                 cv=cv_strategy,
-                scoring="roc_auc",
+                scoring=scoring,
                 error_score="raise",
             )
-            mean_auc = float(np.mean(scores))
+            mean_score = float(np.mean(scores))
 
-            if mean_auc >= threshold:
-                detail.append({"column": col, "score": round(mean_auc, 4)})
+            if mean_score >= threshold:
+                detail.append({"column": col, "score": round(mean_score, 4)})
 
-        except Exception:
-            # Skip features that break fitting (e.g., severe singularity issues)
-            continue
+        except Exception as exc:
+            errors.append({"column": col, "error": f"{type(exc).__name__}: {exc}"})
 
-    # Sort flagged features descending by AUC score
+    # Sort flagged features descending by score
     detail = sorted(detail, key=lambda x: x["score"], reverse=True)
 
     return {
         "check": "single_feature_predictiveness",
         "n_flagged": len(detail),
         "detail": detail,
+        "scoring": scoring,
+        "errors": errors,
     }
 
 
 def check_correlation(
     df: pd.DataFrame, target_col: str, threshold: float = 0.9
-) -> dict:
+) -> "CheckResult":
     """Computes direct correlation (numeric) or Cramér's V (categorical)
 
     against the target to quickly catch obvious leakage without model training.

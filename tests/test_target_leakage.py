@@ -6,13 +6,12 @@ Validates target_leakage.py against the clean and leaky_target fixtures.
 
 import numpy as np
 import pandas as pd
-import pytest
-
 from leak_detector.target_leakage import (
     check_correlation,
     check_single_feature_predictiveness,
     is_id_like,
 )
+
 from tests.conftest import TARGET_COL
 
 
@@ -49,16 +48,19 @@ def test_id_like_column_is_not_flagged(clean_train):
     assert "customerID" not in flagged_columns
 
 
-def test_predictiveness_requires_binary_target():
+def test_predictiveness_supports_multiclass_target():
     dataframe = pd.DataFrame(
         {
-            "feature": [1, 2, 3, 4, 5, 6],
-            "target": ["a", "b", "c", "a", "b", "c"],
+            "feature": list(range(15)),
+            "target": ["a"] * 5 + ["b"] * 5 + ["c"] * 5,
         }
     )
 
-    with pytest.raises(ValueError, match="must be binary"):
-        check_single_feature_predictiveness(dataframe, target_col="target")
+    result = check_single_feature_predictiveness(dataframe, target_col="target")
+
+    assert result["check"] == "single_feature_predictiveness"
+    assert isinstance(result["n_flagged"], int)
+    assert isinstance(result["detail"], list)
 
 
 def test_id_heuristic_handles_differently_named_numeric_identifier():
