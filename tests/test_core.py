@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from leak_detector.core import InputDataError, main, run_leak_check
 
+from leak_detector.core import InputDataError, main, run_leak_check
 from tests.conftest import CLEAN_DIR, ID_COL, LEAKY_DIR, TARGET_COL
 
 

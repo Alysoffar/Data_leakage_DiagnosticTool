@@ -6,12 +6,12 @@ Validates target_leakage.py against the clean and leaky_target fixtures.
 
 import numpy as np
 import pandas as pd
+
 from leak_detector.target_leakage import (
     check_correlation,
     check_single_feature_predictiveness,
     is_id_like,
 )
-
 from tests.conftest import TARGET_COL
 
 

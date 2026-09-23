@@ -1,8 +1,8 @@
 """Validate overlap checks against clean, exact-leak, and group-leak data."""
 
 import pandas as pd
-from leak_detector.overlap import check_exact_duplicates, check_group_overlap, check_near_duplicates
 
+from leak_detector.overlap import check_exact_duplicates, check_group_overlap, check_near_duplicates
 from tests.conftest import ID_COL
 
 # On real-world categorical data, a small number of coincidental exact
