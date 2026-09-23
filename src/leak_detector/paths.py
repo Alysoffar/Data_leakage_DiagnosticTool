@@ -43,7 +43,7 @@ class ProjectPaths:
         """Return the processed root for the default or a named dataset."""
         return self.processed_data if dataset_name is None else self.processed_data / dataset_name
 
-    def report_path(self, filename: str = "leak_report.md") -> Path:
+    def report_path(self, filename: str | Path = "leak_report.md") -> Path:
         """Return a report path inside the canonical reports directory."""
         return self.reports / filename
 

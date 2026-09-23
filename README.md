@@ -21,6 +21,8 @@ The overlap checks compare rows between the training and test datasets.
 
 - **Exact duplicates** identify test rows that also appear in training.
 - **Near duplicates** use a similarity threshold to identify rows that are almost identical.
+- **Shared entity groups** identify IDs that occur in both splits even when the rows differ.
+- **Temporal leakage** identifies future-dated features and train/test splits that run backward in time.
 - Identifier columns can be excluded from exact-duplicate fingerprints with `--ignore-cols`.
 
 Exact duplicates are usually a serious problem because the model may have already seen the test record during training. Near duplicates require investigation because they may be legitimate repeated observations or may indicate that the split was performed after related records were created.
@@ -29,7 +31,7 @@ Exact duplicates are usually a serious problem because the model may have alread
 
 Each feature is evaluated by itself with preprocessing and cross-validated logistic regression. A feature whose standalone ROC AUC reaches the configured threshold may be a leaked representation or an unusually strong proxy for the target.
 
-This check currently requires a binary target. A target with three or more classes raises a clear validation error instead of producing an invalid binary AUC result.
+The check supports binary and multi-class targets. Multi-class targets use one-vs-rest ROC AUC and require enough examples per class for the configured cross-validation folds.
 
 ### Direct correlation and association
 
@@ -57,6 +59,9 @@ src/
     overlap.py                 Exact and near-overlap checks
     paths.py                   Canonical project paths
     report.py                  Markdown report generation
+    pipeline_checker.py        Static preprocessing leakage checker
+    temporal.py                Timestamp and chronology checks
+    types.py                   Shared result type definitions
     target_leakage.py          Predictiveness and association checks
 examples/                      Notebook demonstrations
 tests/                         Automated tests using Data/processed
@@ -112,12 +117,15 @@ Data/processed/leaky/leaky_overlap_train.csv
 Data/processed/leaky/leaky_overlap_test.csv
 Data/processed/leaky/leaky_target_train.csv
 Data/processed/leaky/leaky_target_test.csv
+  Data/processed/leaky/leaky_group_overlap_train.csv
+  Data/processed/leaky/leaky_group_overlap_test.csv
 ```
 
 The generated leaky variants are useful for verifying that the detector catches known problems:
 
 - `leaky_overlap_*` contains copied test rows in the training data.
 - `leaky_target_*` contains a synthetic `cheat_score` derived from the target.
+- `leaky_group_overlap_*` contains changed synthetic visits for entities present in both splits.
 
 ### Generate variants for another dataset
 
@@ -204,6 +212,15 @@ leak-check train.csv test.csv --target target `
 | `--target` | Yes | None | Target column name |
 | `--output` | No | `reports/leak_report.md` | Markdown report path |
 | `--ignore-cols` | No | None | Columns excluded from exact duplicate fingerprints |
+| `--group-col` | No | Auto-detected | Entity column used for shared-group overlap checks |
+| `--label-date-col` | No | None | Label/outcome date column for temporal checks |
+| `--feature-date-cols` | No | None | Feature date columns checked against the label date |
+| `--temporal-nonstrict` | No | Strict | Allow feature dates equal to the label date |
+| `--code-path` | No | None | Python source file scanned for preprocessing leakage |
+| `--profile` | No | `full` | Run `full`, `overlap`, `target`, `temporal`, or `code` checks |
+| `--format` | No | `markdown` | Write a Markdown or JSON report |
+| `--near-max-rows` | No | None | Deterministic row cap for near-duplicate checks |
+| `--max-input-rows` | No | None | Reject CSV inputs larger than this safety limit |
 | `--overlap-threshold` | No | `0.95` | Similarity threshold for near duplicates |
 | `--target-threshold` | No | `0.90` | AUC or association threshold for target leakage |
 
@@ -213,9 +230,45 @@ leak-check train.csv test.csv --target target `
 leak-check train.csv test.csv --target Churn --ignore-cols customerID account_id
 ```
 
+To scan the model code as part of the same report:
+
+```powershell
+leak-check train.csv test.csv --target Churn --code-path train_model.py
+```
+
+The static scan checks for preprocessing fit on unsplit data, raw estimators
+passed to `cross_val_score`, and preprocessing fit on the full dataset inside
+a cross-validation loop. It is a conservative AST check, not a replacement
+for reviewing the complete training pipeline.
+
+Options can also be supplied in JSON configuration, as shown in
+`examples/leak_check.json`:
+
+```powershell
+leak-check `
+  Data/processed/clean/clean_train.csv `
+  Data/processed/clean/clean_test.csv `
+  --config examples/leak_check.json
+```
+
+Explicit command-line options take precedence over values from the config file.
+The static checker limits source size and AST complexity, and dataset checks can
+reject oversized CSV inputs with `--max-input-rows`.
+
+For local performance measurements, run:
+
+```powershell
+python benchmarks/benchmark_checks.py
+```
+
+The command exits with status `1` when a configured check finds leakage, status
+`0` when no findings are reported, and status `2` for invalid inputs or
+configuration. Reports include the selected profile, thresholds, paths, target,
+and ignored columns as metadata.
+
 ## Read the report
 
-Each report contains:
+Each Markdown report contains:
 
 1. An overall verdict.
 2. The number of rows in the test set.
@@ -224,6 +277,11 @@ Each report contains:
 5. Single-feature predictiveness results.
 6. Direct correlation or association results.
 7. The target column and configured thresholds.
+8. Report metadata such as profile, input paths, ignored columns, and thresholds.
+
+JSON reports contain the same information under `metadata`, `summary`, and
+`results` keys, plus a versioned `schema_version`, making them suitable for CI
+or dashboards.
 
 A clean report is not a guarantee of clean data. Review the report together with the feature lineage, collection timestamps, entity boundaries, and any preprocessing performed before the split.
 
@@ -239,7 +297,7 @@ The current heuristic skips:
 
 It does not automatically skip every high-cardinality numeric column. Continuous measurements can legitimately have many unique values, and a noisy target proxy must remain visible to the leakage check. Because this is a heuristic, unusual identifiers should be tested explicitly and reviewed with domain knowledge.
 
-If an identifier is not detected automatically, pass it to `--ignore-cols` for overlap detection and consider excluding it from modeling separately.
+Automatic group detection intentionally avoids a generic column named `id`, which is too ambiguous. Pass an identifier explicitly with `--group-col` when needed, and pass it to `--ignore-cols` for exact and near-overlap checks.
 
 ## Input validation and errors
 
@@ -274,6 +332,7 @@ summary = run_leak_check(
     target_col="income",
     ignore_cols=["record_number"],
     output_path="adult_report.md",
+    profile="full",
 )
 
 print(summary)

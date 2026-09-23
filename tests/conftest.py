@@ -38,6 +38,46 @@ def leaky_overlap_test():
 
 
 @pytest.fixture
+def leaky_group_overlap_train():
+    return _load("leaky", "leaky_group_overlap_train.csv")
+
+
+@pytest.fixture
+def leaky_group_overlap_test():
+    return _load("leaky", "leaky_group_overlap_test.csv")
+
+
+@pytest.fixture
+def clean_temporal_train():
+    return _load("clean", "clean_temporal_train.csv")
+
+
+@pytest.fixture
+def clean_temporal_test():
+    return _load("clean", "clean_temporal_test.csv")
+
+
+@pytest.fixture
+def leaky_temporal_feature_train():
+    return _load("leaky", "leaky_temporal_feature_train.csv")
+
+
+@pytest.fixture
+def leaky_temporal_feature_test():
+    return _load("leaky", "leaky_temporal_feature_test.csv")
+
+
+@pytest.fixture
+def leaky_temporal_split_train():
+    return _load("leaky", "leaky_temporal_split_train.csv")
+
+
+@pytest.fixture
+def leaky_temporal_split_test():
+    return _load("leaky", "leaky_temporal_split_test.csv")
+
+
+@pytest.fixture
 def leaky_target_train():
     return _load("leaky", "leaky_target_train.csv")
 

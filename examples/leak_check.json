@@ -1,0 +1,11 @@
+{
+  "target": "Churn",
+  "ignore_cols": ["customerID"],
+  "group_col": "customerID",
+  "profile": "full",
+  "output_format": "json",
+  "near_max_rows": 10000,
+  "max_input_rows": 100000,
+  "overlap_threshold": 0.95,
+  "target_threshold": 0.9
+}
